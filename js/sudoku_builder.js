@@ -98,6 +98,53 @@ class GridShape {
     };
   }
 
+  getAdjacentCells = (cellId) => {
+    let row = parseInt(cellId[1], this._valueBase) - 1;
+    let col = parseInt(cellId[3], this._valueBase) - 1;
+    let result = [];
+    for (let dx = -1; dx < 2; dx++) {
+      let x = col + dx;
+      if (x < 0)
+        continue;
+      if (x >= this.gridSize)
+        continue;
+      for (let dy = -1; dy < 2; dy++) {
+        let y = row + dy;
+        if (y < 0)
+          continue;
+        if (y >= this.gridSize)
+          continue;
+        if (dx == 0 && dy == 0)
+          continue;
+        result.push(this.makeCellId(y, x));
+      }
+    }
+    return result;
+  }
+
+  getOrthogonalCells = (cellId) => {
+    let row = parseInt(cellId[1], this._valueBase) - 1;
+    let col = parseInt(cellId[3], this._valueBase) - 1;
+    let result = [];
+    for (let dx = -1; dx < 2; dx+=2) {
+      let x = col + dx;
+      if (x < 0)
+        continue;
+      if (x >= this.gridSize)
+        continue;
+      result.push(this.makeCellId(row, x));
+    }
+    for (let dy = -1; dy < 2; dy+=2) {
+      let y = row + dy;
+      if (y < 0)
+        continue;
+      if (y >= this.gridSize)
+        continue;
+      result.push(this.makeCellId(y, col));
+    }
+    return result;
+  }
+
   static get(name) {
     if (this._registry.has(name)) return this._registry.get(name);
     return this._makeFromGridSpec(name);
@@ -1632,6 +1679,113 @@ class SudokuConstraint {
     );
   }
 
+  static Comparison = class Comparison extends SudokuConstraintBase {
+    static DESCRIPTION = (`
+      Comparison: compare value. Adjacent cells only."`);
+    static CATEGORY = 'LinesAndSets';
+    static UNIQUENESS_KEY_FIELD = 'comparisonId';
+    static DISPLAY_CONFIG = {
+      displayClass: 'Comparison',
+    };
+    static ARGUMENT_CONFIG = {
+      label: "mode",
+      options: [
+        { value: '1', text: 'Greater' },
+        { value: '-1', text: 'Less' },
+      ],
+    };
+    
+    static VALIDATE_CELLS_FN = (cells, shape) => {
+      if (cells.length != 2) {
+        return false;
+      }
+      let primary = cells[0];
+      for (let i = 1; i < cells.length; i++) {
+        if (!this._cellsAreAdjacent([primary, cells[i]], shape))
+          return false;
+      }
+      return true;
+    }
+
+    constructor(mode, primaryCell, secondaryCell) {
+      super([mode, primaryCell, secondaryCell]);
+      this.mode = +mode;
+      this.primaryCell = primaryCell;
+      this.secondaryCell = secondaryCell;
+      if (primaryCell > secondaryCell) {
+        this.comparisonId = `${this.mode}-${primaryCell}${secondaryCell}`;
+      } else {
+        this.comparisonId = `${-this.mode}-${secondaryCell}${primaryCell}`;
+      }
+    }
+
+    secondaryCells(shape) { return [this.secondaryCell]; }
+
+    static displayName() {
+      return "Comparison"
+    }
+
+    chipLabel() {
+      let symbol;
+      switch (this.mode) {
+      case 1:
+        symbol = '>';
+        break;
+      case -1:
+        symbol = '<';
+        break;
+      default:
+        throw new Error("Invalid state")
+      }
+      return `${this.primaryCell} ${symbol} ${this.secondaryCell}`;
+    }
+
+    static fnKey = memoize((mode, numValues) =>
+      SudokuConstraint.Binary.fnToKey((a, b) => (mode < 0) ? (a < b) : (a > b), numValues)
+    );
+
+  }
+
+  static Fortress = class Fortress extends SudokuConstraint.Comparison {
+    static DESCRIPTION = (`
+      Fortress: compare value of orthogonally connected cells."`);
+    static CATEGORY = 'LinesAndSets';
+    static DISPLAY_CONFIG = {
+      displayClass: 'Comparison',
+    };
+    static UNIQUENESS_KEY_FIELD = 'primaryCell';
+    static VALIDATE_CELLS_FN = (cells) => cells.length == 1;
+
+    constructor(mode, primaryCell) {
+      super(mode, primaryCell);
+      this.mode = +mode;
+      this.primaryCell = primaryCell;
+    }
+
+    secondaryCells(shape) {
+      return shape.getOrthogonalCells(this.primaryCell);
+    }
+    
+    static displayName() {
+      return "Fortress"
+    }
+
+    chipLabel() {
+      let symbol;
+      switch (this.mode) {
+      case 1:
+        symbol = '>';
+        break;
+      case -1:
+        symbol = '<';
+        break;
+      default:
+        throw new Error("Invalid state")
+      }
+      return `Fortress ${this.primaryCell}  ${symbol}`;
+    }
+  }
+
   static X = class X extends SudokuConstraintBase {
     static DESCRIPTION = (`
       Values must add to 10. Adjacent cells only.`);
@@ -2864,6 +3018,18 @@ class SudokuBuilder {
           cells = constraint.cells.map(c => shape.parseCellId(c).cell);
           yield new SudokuConstraintHandler.Sum(cells, 5);
           break;
+
+        case 'Comparison': 
+        case 'Fortress': {
+          let mode = constraint.mode;
+          let primaryCell = shape.parseCellId(constraint.primaryCell).cell;
+          let secondaryCells = constraint.secondaryCells(shape).map(c => shape.parseCellId(c).cell)
+          let fn = SudokuConstraint.Comparison.fnKey(mode, shape.numValues);
+          for (let secondaryCell of secondaryCells) {
+            yield new SudokuConstraintHandler.BinaryConstraint(primaryCell, secondaryCell, fn);
+          }
+          break;
+        }
 
         case 'ValueIndexing':
           {
