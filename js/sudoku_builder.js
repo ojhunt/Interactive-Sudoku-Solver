@@ -1681,109 +1681,59 @@ class SudokuConstraint {
 
   static Comparison = class Comparison extends SudokuConstraintBase {
     static DESCRIPTION = (`
-      Comparison: compare value. Adjacent cells only."`);
+      Comparison: compare value between adjacent cells.`);
     static CATEGORY = 'LinesAndSets';
-    static UNIQUENESS_KEY_FIELD = 'comparisonId';
     static DISPLAY_CONFIG = {
       displayClass: 'Comparison',
     };
     static ARGUMENT_CONFIG = {
       label: "mode",
       options: [
-        { value: '1', text: 'Greater' },
-        { value: '-1', text: 'Less' },
+        { value: '1', text: 'Maximum' },
+        { value: '-1', text: 'Minimum' },
       ],
     };
     
-    static VALIDATE_CELLS_FN = (cells, shape) => {
-      if (cells.length != 2) {
+    static VALIDATE_CELLS_FN = ([primary, ...secondaries], shape) => {
+      if (!secondaries.length)
         return false;
-      }
-      let primary = cells[0];
-      for (let i = 1; i < cells.length; i++) {
-        if (!this._cellsAreAdjacent([primary, cells[i]], shape))
+      for (let secondary of secondaries) {
+        if (!this._cellsAreAdjacent([primary, secondary], shape))
           return false;
       }
       return true;
     }
 
-    constructor(mode, primaryCell, secondaryCell) {
-      super([mode, primaryCell, secondaryCell]);
+    constructor(mode, primaryCell, ...secondaryCells) {
+      secondaryCells.sort();
+      super([mode, primaryCell, ...secondaryCells]);
       this.mode = +mode;
       this.primaryCell = primaryCell;
-      this.secondaryCell = secondaryCell;
-      if (primaryCell > secondaryCell) {
-        this.comparisonId = `${this.mode}-${primaryCell}${secondaryCell}`;
-      } else {
-        this.comparisonId = `${-this.mode}-${secondaryCell}${primaryCell}`;
-      }
+      this.secondaryCells = secondaryCells;
     }
-
-    secondaryCells(shape) { return [this.secondaryCell]; }
 
     static displayName() {
-      return "Comparison"
+      return 'Comparison'
     }
 
-    chipLabel() {
-      let symbol;
+    _symbol() {
       switch (this.mode) {
       case 1:
-        symbol = '>';
-        break;
+        return '>';
       case -1:
-        symbol = '<';
-        break;
+        return '<';
       default:
         throw new Error("Invalid state")
       }
-      return `${this.primaryCell} ${symbol} ${this.secondaryCell}`;
+    }
+    chipLabel() {
+      return `${this.primaryCell} ${this._symbol()} [${this.secondaryCells}]`;
     }
 
     static fnKey = memoize((mode, numValues) =>
       SudokuConstraint.Binary.fnToKey((a, b) => (mode < 0) ? (a < b) : (a > b), numValues)
     );
 
-  }
-
-  static Fortress = class Fortress extends SudokuConstraint.Comparison {
-    static DESCRIPTION = (`
-      Fortress: compare value of orthogonally connected cells."`);
-    static CATEGORY = 'LinesAndSets';
-    static DISPLAY_CONFIG = {
-      displayClass: 'Comparison',
-    };
-    static UNIQUENESS_KEY_FIELD = 'primaryCell';
-    static VALIDATE_CELLS_FN = (cells) => cells.length == 1;
-
-    constructor(mode, primaryCell) {
-      super(mode, primaryCell);
-      this.mode = +mode;
-      this.primaryCell = primaryCell;
-    }
-
-    secondaryCells(shape) {
-      return shape.getOrthogonalCells(this.primaryCell);
-    }
-    
-    static displayName() {
-      return "Fortress"
-    }
-
-    chipLabel() {
-      let symbol;
-      switch (this.mode) {
-      case 1:
-        symbol = '>';
-        break;
-      case -1:
-        symbol = '<';
-        break;
-      default:
-        throw new Error("Invalid state")
-      }
-      return `Fortress ${this.primaryCell}  ${symbol}`;
-    }
   }
 
   static X = class X extends SudokuConstraintBase {
@@ -3019,13 +2969,12 @@ class SudokuBuilder {
           yield new SudokuConstraintHandler.Sum(cells, 5);
           break;
 
-        case 'Comparison': 
-        case 'Fortress': {
+        case 'Comparison': {
           let mode = constraint.mode;
           let primaryCell = shape.parseCellId(constraint.primaryCell).cell;
-          let secondaryCells = constraint.secondaryCells(shape).map(c => shape.parseCellId(c).cell)
           let fn = SudokuConstraint.Comparison.fnKey(mode, shape.numValues);
-          for (let secondaryCell of secondaryCells) {
+          for (let secondary of constraint.secondaryCells) {
+            let secondaryCell = shape.parseCellId(secondary).cell;
             yield new SudokuConstraintHandler.BinaryConstraint(primaryCell, secondaryCell, fn);
           }
           break;

@@ -1234,8 +1234,7 @@ ConstraintDisplays.Givens = class Givens extends BaseConstraintDisplayItem {
 ConstraintDisplays.Comparison = class Comparison extends BaseConstraintDisplayItem {
   drawItem(constraint, options) {
     const primaryCell = constraint.primaryCell;
-    const secondaryCells = constraint.secondaryCells(this._shape);
-    if (!secondaryCells.length) throw (`Comparison must be provided at least two cells: ${secondaryCells}`);
+    const secondaryCells = constraint.secondaryCells;
 
     let result = createSvgElement("g");
     let drawDecoration = (primaryCell, secondaryCell) => {
@@ -1246,8 +1245,8 @@ ConstraintDisplays.Comparison = class Comparison extends BaseConstraintDisplayIt
       let y = (y0 + y1) / 2;
       const cellSize = DisplayItem.CELL_SIZE;
       const comparisonSize = 0.1 * cellSize;
-      const inset = secondaryCells.length > 1 ? (1 * comparisonSize) : 0;
-      const squash = secondaryCells.length > 1 ? 0.5 : 0.75;
+      const inset = 0;
+      const squash = 0.75;
       var dC = x0 < x1 ? 1 : (x0 > x1 ? -1 : 0);
       var dR = y0 < y1 ? 1 : (y0 > y1 ? -1 : 0);
       let directions;
